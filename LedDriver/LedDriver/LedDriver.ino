@@ -7,8 +7,8 @@
 #include <WiFi.h>
 
 
-const char* ssid = "MYSSID";
-const char* password = "MYPASSWORD";
+const char* ssid = "Test";
+const char* password = "TofuDinner";
 String hostName = "Spotlight";
 const char* dnsName = "spotlight";
 
@@ -59,7 +59,7 @@ void setup() {
 
   //Start HTTP server
   server.on("/", handleRoot); //Call the handleroot function when a client requests the URI: "/". 
-  server.onNotFound(handleNotFound); //Wehn a client requests unknown URI. 
+  server.onNotFound(handleNotFound); //When a client requests unknown URI. 
   server.begin();
   Serial.println("HTTP server has begun. ");
 
