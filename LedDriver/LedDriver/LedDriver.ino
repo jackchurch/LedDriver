@@ -1,6 +1,9 @@
 // Code and tutorial comes from:
 // https://tttapa.github.io/ESP8266/Chap14%20-%20WebSocket.html
 
+// File reading code comes from:
+// https://techtutorialsx.com/2019/02/23/esp32-arduino-list-all-files-in-the-spiffs-file-system/
+
 #include <ESPmDNS.h>
 #include <HTTP_Method.h>
 #include <SPIFFS.h>
@@ -24,12 +27,42 @@ File fsUploadFile;  // File variable to store the recieved file temporarily.
 #define LED_GREEN 27
 #define LED_BLUE 25
 
+// JC OTHER CODE ↓
+// Red, green, and blue pins for PWM control
+const int redPin = 26;    //
+const int greenPin = 27;  //
+const int bluePin = 25;   //
 
+// Setting PWM frequency, channels and bit resolution
+const int freq = 5000;
+const int redChannel = 0;
+const int greenChannel = 1;
+const int blueChannel = 2;
+// Bit resolution 2^8 = 256
+const int resolution = 8;
+
+// Current time
+unsigned long currentTime = millis();
+// Previous time
+unsigned long previousTime = 0;
+// Define timeout time in milliseconds (example: 2000ms = 2s)
+const long timeoutTsime = 2000;
+// JC OTHER CODE ↑
 
 void setup() {
-  pinMode(LED_RED, OUTPUT);  // the pins with LEDs connected are outputs
-  pinMode(LED_GREEN, OUTPUT);
-  pinMode(LED_BLUE, OUTPUT);
+  //  pinMode(LED_RED, OUTPUT);  // the pins with LEDs connected are outputs
+  //  pinMode(LED_GREEN, OUTPUT);
+  //  pinMode(LED_BLUE, OUTPUT);
+
+  // configure LED PWM functionalitites
+  ledcSetup(redChannel, freq, resolution);
+  ledcSetup(greenChannel, freq, resolution);
+  ledcSetup(blueChannel, freq, resolution);
+
+  // attach the channel to the GPIO to be controlled
+  ledcAttachPin(redPin, redChannel);
+  ledcAttachPin(greenPin, greenChannel);
+  ledcAttachPin(bluePin, blueChannel);
 
   Serial.begin(115200);  // Start the Serial communication to send messages to
                          // the computer
@@ -46,23 +79,23 @@ void setup() {
 
   startServer();  // Start a HTTP server with a file read handler and an upload
                   // handler.
+}
 
- }
-
-bool rainbow = false;             // The rainbow effect is turned off on startup
+bool rainbow = false;  // The rainbow effect is turned off on startup
 
 unsigned long prevMillis = millis();
 int hue = 0;
 
 void loop() {
-  webSocket.loop();                           // constantly check for websocket events
-  server.handleClient();                      // run the server
+  webSocket.loop();       // constantly check for websocket events
+  server.handleClient();  // run the server
 
-  if(rainbow) {                               // if the rainbow effect is turned on
-    if(millis() > prevMillis + 32) {          
-      if(++hue == 360)                        // Cycle through the color wheel (increment by one degree every 32 ms)
+  if (rainbow) {  // if the rainbow effect is turned on
+    if (millis() > prevMillis + 32) {
+      if (++hue == 360)  // Cycle through the color wheel (increment by one
+                         // degree every 32 ms)
         hue = 0;
-      setHue(hue);                            // Set the RGB LED to the right color
+      setHue(hue);  // Set the RGB LED to the right color
       prevMillis = millis();
     }
   }
@@ -90,17 +123,16 @@ void startWiFi() {  // Start a Wi-Fi access point, and try to connect to some
 
 void startSPIFFS() {  // Start the SPIFFS and list all contents
   SPIFFS.begin();     // Start the SPI Flash File System (SPIFFS)
-  // Serial.println("SPIFFS started. Contents:");
-  // {
-  //    dir = SPIFFS.openDir("/");Dir
-  //   while (dir.next()) {  // List the file system contents
-  //     String fileName = dir.fileName();
-  //     size_t fileSize = dir.fileSize();
-  //     Serial.printf("\tFS File: %s, size: %s\r\n", fileName.c_str(),
-  //                   formatBytes(fileSize).c_str());
-  //   }
-  //   Serial.printf("\n");
-  // }
+  Serial.println("SPIFFS started. Contents:");
+  {
+    File root = SPIFFS.open("/");
+    File file = root.openNextFile();
+    while (file) {  // List the file system contents
+      Serial.println(file.name());
+      file = root.openNextFile();
+    }
+    Serial.println("\n");
+  }
 }
 
 void startWebSocket() {  // Start a WebSocket server
@@ -137,52 +169,71 @@ void startServer() {  // Start a HTTP server with a file read handler and an
   Serial.println("HTTP server started.");
 }
 
-void handleNotFound(){ // if the requested file or page doesn't exist, return a 404 not found error
-  if(!handleFileRead(server.uri())){          // check if the file exists in the flash memory (SPIFFS), if so, send it
+void handleNotFound() {  // if the requested file or page doesn't exist, return
+                         // a 404 not found error
+  if (!handleFileRead(server.uri())) {  // check if the file exists in the flash
+                                        // memory (SPIFFS), if so, send it
     server.send(404, "text/plain", "404: File Not Found");
   }
 }
 
-bool handleFileRead(String path) { // send the right file to the client (if it exists)
+bool handleFileRead(
+    String path) {  // send the right file to the client (if it exists)
   Serial.println("handleFileRead: " + path);
-  if (path.endsWith("/")) path += "index.html";          // If a folder is requested, send the index file
-  String contentType = getContentType(path);             // Get the MIME type
+  if (path.endsWith("/"))
+    path += "index.html";  // If a folder is requested, send the index file
+  String contentType = getContentType(path);  // Get the MIME type
   String pathWithGz = path + ".gz";
-  if (SPIFFS.exists(pathWithGz) || SPIFFS.exists(path)) { // If the file exists, either as a compressed archive, or normal
-    if (SPIFFS.exists(pathWithGz))                         // If there's a compressed version available
-      path += ".gz";                                         // Use the compressed verion
-    File file = SPIFFS.open(path, "r");                    // Open the file
-    size_t sent = server.streamFile(file, contentType);    // Send it to the client
-    file.close();                                          // Close the file again
+  if (SPIFFS.exists(pathWithGz) ||
+      SPIFFS.exists(path)) {  // If the file exists, either as a compressed
+                              // archive, or normal
+    if (SPIFFS.exists(pathWithGz))  // If there's a compressed version available
+      path += ".gz";                // Use the compressed verion
+    File file = SPIFFS.open(path, "r");  // Open the file
+    size_t sent =
+        server.streamFile(file, contentType);  // Send it to the client
+    file.close();                              // Close the file again
     Serial.println(String("\tSent file: ") + path);
     return true;
   }
-  Serial.println(String("\tFile Not Found: ") + path);   // If the file doesn't exist, return false
+  Serial.println(String("\tFile Not Found: ") +
+                 path);  // If the file doesn't exist, return false
   return false;
 }
 
-void handleFileUpload(){ // upload a new file to the SPIFFS
+void handleFileUpload() {  // upload a new file to the SPIFFS
   HTTPUpload& upload = server.upload();
   String path;
-  if(upload.status == UPLOAD_FILE_START){
+  if (upload.status == UPLOAD_FILE_START) {
     path = upload.filename;
-    if(!path.startsWith("/")) path = "/"+path;
-    if(!path.endsWith(".gz")) {                          // The file server always prefers a compressed version of a file 
-      String pathWithGz = path+".gz";                    // So if an uploaded file is not compressed, the existing compressed
-      if(SPIFFS.exists(pathWithGz))                      // version of that file must be deleted (if it exists)
-         SPIFFS.remove(pathWithGz);
+    if (!path.startsWith("/")) path = "/" + path;
+    if (!path.endsWith(".gz")) {  // The file server always prefers a compressed
+                                  // version of a file
+      String pathWithGz = path + ".gz";  // So if an uploaded file is not
+                                         // compressed, the existing compressed
+      if (SPIFFS.exists(pathWithGz))     // version of that file must be deleted
+                                         // (if it exists)
+        SPIFFS.remove(pathWithGz);
     }
-    Serial.print("handleFileUpload Name: "); Serial.println(path);
-    fsUploadFile = SPIFFS.open(path, "w");            // Open the file for writing in SPIFFS (create if it doesn't exist)
+    Serial.print("handleFileUpload Name: ");
+    Serial.println(path);
+    fsUploadFile =
+        SPIFFS.open(path, "w");  // Open the file for writing in SPIFFS (create
+                                 // if it doesn't exist)
     path = String();
-  } else if(upload.status == UPLOAD_FILE_WRITE){
-    if(fsUploadFile)
-      fsUploadFile.write(upload.buf, upload.currentSize); // Write the received bytes to the file
-  } else if(upload.status == UPLOAD_FILE_END){
-    if(fsUploadFile) {                                    // If the file was successfully created
-      fsUploadFile.close();                               // Close the file again
-      Serial.print("handleFileUpload Size: "); Serial.println(upload.totalSize);
-      server.sendHeader("Location","/success.html");      // Redirect the client to the success page
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (fsUploadFile)
+      fsUploadFile.write(
+          upload.buf,
+          upload.currentSize);  // Write the received bytes to the file
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (fsUploadFile) {      // If the file was successfully created
+      fsUploadFile.close();  // Close the file again
+      Serial.print("handleFileUpload Size: ");
+      Serial.println(upload.totalSize);
+      server.sendHeader(
+          "Location",
+          "/success.html");  // Redirect the client to the success page
       server.send(303);
     } else {
       server.send(500, "text/plain", "500: couldn't create file");
@@ -190,38 +241,45 @@ void handleFileUpload(){ // upload a new file to the SPIFFS
   }
 }
 
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t lenght) { // When a WebSocket message is received
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload,
+                    size_t lenght) {  // When a WebSocket message is received
   switch (type) {
-    case WStype_DISCONNECTED:             // if the websocket is disconnected
+    case WStype_DISCONNECTED:  // if the websocket is disconnected
       Serial.printf("[%u] Disconnected!\n", num);
       break;
-    case WStype_CONNECTED: {              // if a new websocket connection is established
-        IPAddress ip = webSocket.remoteIP(num);
-        Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
-        rainbow = false;                  // Turn rainbow off when a new connection is established
-      }
-      break;
-    case WStype_TEXT:                     // if new text data is received
+    case WStype_CONNECTED: {  // if a new websocket connection is established
+      IPAddress ip = webSocket.remoteIP(num);
+      Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0],
+                    ip[1], ip[2], ip[3], payload);
+      rainbow = false;  // Turn rainbow off when a new connection is established
+    } break;
+    case WStype_TEXT:  // if new text data is received
       Serial.printf("[%u] get Text: %s\n", num, payload);
-      if (payload[0] == '#') {            // we get RGB data
-        uint32_t rgb = (uint32_t) strtol((const char *) &payload[1], NULL, 16);   // decode rgb data
-        int r = ((rgb >> 20) & 0x3FF);                     // 10 bits per color, so R: bits 20-29
-        int g = ((rgb >> 10) & 0x3FF);                     // G: bits 10-19
-        int b =          rgb & 0x3FF;                      // B: bits  0-9
+      if (payload[0] == '#') {  // we get RGB data
+        uint32_t rgb = (uint32_t)strtol((const char*)&payload[1], NULL,
+                                        16);  // decode rgb data
+        int r = ((rgb >> 20) & 0x3FF);  // 10 bits per color, so R: bits 20-29
+        int g = ((rgb >> 10) & 0x3FF);  // G: bits 10-19
+        int b = rgb & 0x3FF;            // B: bits  0-9
 
-        analogWrite(LED_RED,   r);                         // write it to the LED output pins
-        analogWrite(LED_GREEN, g);
-        analogWrite(LED_BLUE,  b);
-      } else if (payload[0] == 'R') {                      // the browser sends an R when the rainbow effect is enabled
+        // JC OTHER CODE ↓
+        ledcWrite(redChannel,
+                  r);  // Write the right color to the LED output pins
+        ledcWrite(greenChannel, g);
+        ledcWrite(blueChannel, b);
+        // JC OTHER CODE ↑
+      } else if (payload[0] == 'R') {  // the browser sends an R when the
+                                       // rainbow effect is enabled
         rainbow = true;
-      } else if (payload[0] == 'N') {                      // the browser sends an N when the rainbow effect is disabled
+      } else if (payload[0] == 'N') {  // the browser sends an N when the
+                                       // rainbow effect is disabled
         rainbow = false;
       }
       break;
   }
 }
 
-String formatBytes(size_t bytes) { // convert sizes in bytes to KB and MB
+String formatBytes(size_t bytes) {  // convert sizes in bytes to KB and MB
   if (bytes < 1024) {
     return String(bytes) + "B";
   } else if (bytes < (1024 * 1024)) {
@@ -231,40 +289,49 @@ String formatBytes(size_t bytes) { // convert sizes in bytes to KB and MB
   }
 }
 
-String getContentType(String filename) { // determine the filetype of a given filename, based on the extension
-  if (filename.endsWith(".html")) return "text/html";
-  else if (filename.endsWith(".css")) return "text/css";
-  else if (filename.endsWith(".js")) return "application/javascript";
-  else if (filename.endsWith(".ico")) return "image/x-icon";
-  else if (filename.endsWith(".gz")) return "application/x-gzip";
+String getContentType(String filename) {  // determine the filetype of a given
+                                          // filename, based on the extension
+  if (filename.endsWith(".html"))
+    return "text/html";
+  else if (filename.endsWith(".css"))
+    return "text/css";
+  else if (filename.endsWith(".js"))
+    return "application/javascript";
+  else if (filename.endsWith(".ico"))
+    return "image/x-icon";
+  else if (filename.endsWith(".gz"))
+    return "application/x-gzip";
   return "text/plain";
 }
 
-void setHue(int hue) { // Set the RGB LED to a given hue (color) (0° = Red, 120° = Green, 240° = Blue)
-  hue %= 360;                   // hue is an angle between 0 and 359°
-  float radH = hue*3.142/180;   // Convert degrees to radians
+void setHue(int hue) {  // Set the RGB LED to a given hue (color) (0° = Red,
+                        // 120° = Green, 240° = Blue)
+  hue %= 360;           // hue is an angle between 0 and 359°
+  float radH = hue * 3.142 / 180;  // Convert degrees to radians
   float rf, gf, bf;
-  
-  if(hue>=0 && hue<120){        // Convert from HSI color space to RGB              
-    rf = cos(radH*3/4);
-    gf = sin(radH*3/4);
+
+  if (hue >= 0 && hue < 120) {  // Convert from HSI color space to RGB
+    rf = cos(radH * 3 / 4);
+    gf = sin(radH * 3 / 4);
     bf = 0;
-  } else if(hue>=120 && hue<240){
+  } else if (hue >= 120 && hue < 240) {
     radH -= 2.09439;
-    gf = cos(radH*3/4);
-    bf = sin(radH*3/4);
+    gf = cos(radH * 3 / 4);
+    bf = sin(radH * 3 / 4);
     rf = 0;
-  } else if(hue>=240 && hue<360){
+  } else if (hue >= 240 && hue < 360) {
     radH -= 4.188787;
-    bf = cos(radH*3/4);
-    rf = sin(radH*3/4);
+    bf = cos(radH * 3 / 4);
+    rf = sin(radH * 3 / 4);
     gf = 0;
   }
-  int r = rf*rf*1023;
-  int g = gf*gf*1023;
-  int b = bf*bf*1023;
-  
-  analogWrite(LED_RED,   r);    // Write the right color to the LED output pins
-  analogWrite(LED_GREEN, g);
-  analogWrite(LED_BLUE,  b);
+  int r = rf * rf * 1023;
+  int g = gf * gf * 1023;
+  int b = bf * bf * 1023;
+
+  // JC OTHER CODE ↓
+  ledcWrite(redChannel, r);  // Write the right color to the LED output pins
+  ledcWrite(greenChannel, g);
+  ledcWrite(blueChannel, b);
+  // JC OTHER CODE ↑
 }
