@@ -4,6 +4,9 @@
 // File reading code comes from:
 // https://techtutorialsx.com/2019/02/23/esp32-arduino-list-all-files-in-the-spiffs-file-system/
 
+// Required Library for WebSocketsServer: 
+// https://github.com/Links2004/arduinoWebSockets
+
 #include <ESPmDNS.h>
 #include <HTTP_Method.h>
 #include <SPIFFS.h>
@@ -12,11 +15,11 @@
 #include <WebSocketsServer.h>
 #include <WiFi.h>
 
-const char* ssid = "Test";
-const char* password = "TofuDinner";
-String hostName = "Spotlight";
+const char* ssid = "SSID NAME";
+const char* password = "SSID PASSWORD";
+String hostName = "led-spotlight";
 const char* dnsName =
-    "spotlight";  // Go to this in your web browser instead of an IP address.
+    "led-spotlight";  // Go to this in your web browser instead of an IP address.
 
 WebServer server(80);            // Webserver creation on port TCP 80.
 WebSocketsServer webSocket(81);  // Web Sockets Server creation on port TCP 81.
@@ -86,18 +89,102 @@ bool rainbow = false;  // The rainbow effect is turned off on startup
 unsigned long prevMillis = millis();
 int hue = 0;
 
+int green = 0;
+int red = 255;
+int blue = 0;
+
 void loop() {
   webSocket.loop();       // constantly check for websocket events
   server.handleClient();  // run the server
 
-  if (rainbow) {  // if the rainbow effect is turned on
-    if (millis() > prevMillis + 32) {
-      if (++hue == 360)  // Cycle through the color wheel (increment by one
-                         // degree every 32 ms)
-        hue = 0;
-      setHue(hue);  // Set the RGB LED to the right color
-      prevMillis = millis();
+  int msMultiplier = 255;
+
+
+  while (rainbow) {  // if the rainbow effect is turned on
+
+  //Removed blue
+  // Colour is Red
+  //255, 0, 0
+
+    while (green <= 254) {
+      webSocket.loop();
+      if (!rainbow) {
+        break;
+      }
+      green++;
+      blue = 0;
+      setRainbow(red, green, blue);
     }
+    
+    //Added green
+    //Colour is Yellow
+    //255, 255, 0
+
+    while (red >= 1) {
+      if (!rainbow) {
+        break;
+      }
+      red--;
+      green = 255;
+      setRainbow(red, green, blue);
+    }
+
+    //Removed red
+    //Colour is Green
+    //0, 255, 0
+
+    while (blue <= 254) {
+      if (!rainbow) {
+        break;
+      }
+      blue++;
+      red = 0;
+      setRainbow(red, green, blue);
+    }
+
+    //Added blue
+    //Colour is Light Blue
+    //0, 255, 255
+
+    while (green >= 1) {
+      if (!rainbow) {
+        break;
+      }
+      green--;
+      blue = 255;
+      setRainbow(red, green, blue);
+    }
+
+    //Removed green
+    //Colour is Blue
+    //0, 0, 255
+
+    while (red <= 254) {
+      if (!rainbow) {
+        break;
+      }
+      red++;
+      green = 0;
+      setRainbow(red, green, blue);
+    }    
+
+    //Added red
+    //Colour is Magenta
+    //255, 0, 255
+
+    while (blue >= 1) {
+      if (!rainbow) {
+        break;
+      }
+      blue--;
+      red = 255;
+      setRainbow(red, green, blue);
+    }
+
+    //Removed blue
+    //Colour is Red
+    //255, 0, 0
+
   }
 }
 
@@ -105,19 +192,19 @@ void startWiFi() {  // Start a Wi-Fi access point, and try to connect to some
                     // given access points. Then wait for either an AP or STA
                     // connection
                     // Connect to wifi network.
-  Serial.print("Connecting to");
+
   WiFi.setHostname(hostName.c_str());
-  Serial.println(ssid);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-
+  Serial.print("Connected to: ");
+  Serial.println(ssid);
   // Print IP address.
   Serial.println("");
   Serial.println("WiFi connected.");
-  Serial.println("IP address:");
+  Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
 }
 
@@ -148,7 +235,8 @@ void startMDNS() {  // Start the mDNS responder
   if (!MDNS.begin(dnsName)) {
     Serial.println("Error starting MDNS. ");
   } else {
-    Serial.println("MDNS started. ");
+    Serial.print("MDNS name: ");
+    Serial.println(dnsName);
   }
 }
 
@@ -304,34 +392,9 @@ String getContentType(String filename) {  // determine the filetype of a given
   return "text/plain";
 }
 
-void setHue(int hue) {  // Set the RGB LED to a given hue (color) (0° = Red,
-                        // 120° = Green, 240° = Blue)
-  hue %= 360;           // hue is an angle between 0 and 359°
-  float radH = hue * 3.142 / 180;  // Convert degrees to radians
-  float rf, gf, bf;
-
-  if (hue >= 0 && hue < 120) {  // Convert from HSI color space to RGB
-    rf = cos(radH * 3 / 4);
-    gf = sin(radH * 3 / 4);
-    bf = 0;
-  } else if (hue >= 120 && hue < 240) {
-    radH -= 2.09439;
-    gf = cos(radH * 3 / 4);
-    bf = sin(radH * 3 / 4);
-    rf = 0;
-  } else if (hue >= 240 && hue < 360) {
-    radH -= 4.188787;
-    bf = cos(radH * 3 / 4);
-    rf = sin(radH * 3 / 4);
-    gf = 0;
-  }
-  int r = rf * rf * 1023;
-  int g = gf * gf * 1023;
-  int b = bf * bf * 1023;
-
-  // JC OTHER CODE ↓
-  ledcWrite(redChannel, r);  // Write the right color to the LED output pins
-  ledcWrite(greenChannel, g);
-  ledcWrite(blueChannel, b);
-  // JC OTHER CODE ↑
+void setRainbow(int red, int green, int blue) {
+  ledcWrite(redChannel, red);
+  ledcWrite(greenChannel, green);
+  ledcWrite(blueChannel, blue);
+  delay(32);
 }
