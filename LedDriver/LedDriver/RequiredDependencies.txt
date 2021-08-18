@@ -1,0 +1,2 @@
+Required Library for WebSocketsServer: 
+https://github.com/Links2004/arduinoWebSockets
